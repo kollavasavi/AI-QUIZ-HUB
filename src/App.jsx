@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useLayoutEffect, useRef } from 'react'
 import { onAuthStateChanged, signOut } from 'firebase/auth'
 import { auth } from './services/firebase'
 import Header       from './components/Header'
@@ -10,12 +10,19 @@ import LoginPage    from './components/LoginPage'
 import { useQuiz }        from './hooks/useQuiz'
 import { useLeaderboard } from './hooks/useLeaderboard'
 
+const QUIZ_SNAPSHOT_VERSION = 1
+
+function getQuizSnapshotKey(uid) {
+  return `ai-quiz-hub-quiz-snapshot:${uid}`
+}
+
 export default function App() {
   const [user,        setUser]        = useState(null)
   const [authLoading, setAuthLoading] = useState(true)
   const [tab,         setTab]         = useState('home')
   const [difficulty,  setDifficulty]  = useState('easy')
   const [currentCat,  setCurrentCat]  = useState(null)
+  const restoredRef = useRef(false)
 
   const quizHook = useQuiz()
   const lbHook   = useLeaderboard()
@@ -26,6 +33,81 @@ export default function App() {
       setAuthLoading(false)
     })
   }, [])
+
+  useLayoutEffect(() => {
+    if (!user || restoredRef.current) return
+
+    try {
+      const raw = localStorage.getItem(getQuizSnapshotKey(user.uid))
+      if (!raw) {
+        restoredRef.current = true
+        return
+      }
+
+      const snapshot = JSON.parse(raw)
+      if (!snapshot || snapshot.version !== QUIZ_SNAPSHOT_VERSION || snapshot.uid !== user.uid) {
+        restoredRef.current = true
+        return
+      }
+
+      if (snapshot.currentCat) setCurrentCat(snapshot.currentCat)
+      if (snapshot.difficulty) setDifficulty(snapshot.difficulty)
+      if (snapshot.tab) setTab(snapshot.tab)
+      if (snapshot.quiz) quizHook.hydrate(snapshot.quiz)
+    } catch (error) {
+      console.error('Failed to restore quiz snapshot:', error)
+    } finally {
+      restoredRef.current = true
+    }
+  }, [user, quizHook])
+
+  useEffect(() => {
+    if (!user || !restoredRef.current) return
+
+    const key = getQuizSnapshotKey(user.uid)
+    const shouldPersist = tab === 'quiz' || tab === 'results'
+
+    if (!shouldPersist) {
+      localStorage.removeItem(key)
+      return
+    }
+
+    const snapshot = {
+      version: QUIZ_SNAPSHOT_VERSION,
+      uid: user.uid,
+      tab,
+      difficulty,
+      currentCat,
+      quiz: quizHook.quiz,
+    }
+
+    localStorage.setItem(key, JSON.stringify(snapshot))
+  }, [user, tab, difficulty, currentCat, quizHook.quiz])
+
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (!user || !restoredRef.current) return
+
+      const key = getQuizSnapshotKey(user.uid)
+      const shouldPersist = tab === 'quiz' || tab === 'results'
+
+      if (!shouldPersist) return
+
+      const snapshot = {
+        version: QUIZ_SNAPSHOT_VERSION,
+        uid: user.uid,
+        tab,
+        difficulty,
+        currentCat,
+        quiz: quizHook.quiz,
+      }
+
+      localStorage.setItem(key, JSON.stringify(snapshot))
+    }
+
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [user, tab, difficulty, currentCat, quizHook.quiz])
 
   if (authLoading) return (
     <div className="loading-state" style={{ height: '100vh' }}>
@@ -76,7 +158,11 @@ export default function App() {
     }
   }
 
-  const handleHome = () => { quizHook.reset(); setTab('home') }
+  const handleHome = () => {
+    quizHook.reset()
+    setCurrentCat(null)
+    setTab('home')
+  }
 
   const handleViewRankings = () => { setTab('leaderboard'); lbHook.load() }
 
@@ -116,6 +202,7 @@ export default function App() {
               onBack={handleHome}
               onRetry={handleRetryQuiz}
               startTimer={quizHook.startTimer}
+              stopTimer={quizHook.stopTimer}
             />
           </div>
         )}

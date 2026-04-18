@@ -3,20 +3,20 @@ import Timer from './Timer'
 
 const LETTERS = ['A', 'B', 'C', 'D']
 
-export default function QuizScreen({ quiz, cat, onAnswer, onTimeout, onNext, onBack, onRetry, startTimer }) {
-  const [selected,   setSelected]   = useState(null)
+export default function QuizScreen({ quiz, cat, onAnswer, onTimeout, onNext, onBack, onRetry, startTimer, stopTimer }) {
   const [showHint,   setShowHint]   = useState(false)
-  const [wasCorrect, setWasCorrect] = useState(null)
 
   const q     = quiz.questions[quiz.currentQ]
   const total = quiz.questions.length
 
   useEffect(() => {
-    setSelected(null)
     setShowHint(false)
-    setWasCorrect(null)
-    if (q && !quiz.loading) startTimer(onTimeout)
-  }, [quiz.currentQ, q])
+    if (q && !quiz.loading && !quiz.answered) startTimer(onTimeout, quiz.timeLeft)
+    return () => {
+      // Stop the active timer when the question changes or the screen unmounts.
+      stopTimer?.()
+    }
+  }, [quiz.currentQ, q, quiz.loading, quiz.answered, quiz.timeLeft, onTimeout, startTimer, stopTimer])
 
   if (quiz.loading) {
     return (
@@ -43,15 +43,13 @@ export default function QuizScreen({ quiz, cat, onAnswer, onTimeout, onNext, onB
 
   const handleSelect = (idx) => {
     if (quiz.answered) return
-    setSelected(idx)
-    const correct = onAnswer(idx, q.answer)
-    setWasCorrect(correct)
+    onAnswer(idx, q.answer)
   }
 
   const btnClass = (idx) => {
     if (!quiz.answered) return 'option-btn'
     if (idx === q.answer) return 'option-btn correct'
-    if (idx === selected)  return 'option-btn wrong'
+    if (idx === quiz.selectedAnswer)  return 'option-btn wrong'
     return 'option-btn'
   }
 
@@ -102,7 +100,7 @@ export default function QuizScreen({ quiz, cat, onAnswer, onTimeout, onNext, onB
 
       {quiz.answered && (
         <div className="explain-box">
-          <strong>{wasCorrect ? '✓ Correct!' : '✗ Incorrect.'}</strong> {q.explain}
+          <strong>{quiz.selectedAnswer === q.answer ? '✓ Correct!' : '✗ Incorrect.'}</strong> {q.explain}
         </div>
       )}
 

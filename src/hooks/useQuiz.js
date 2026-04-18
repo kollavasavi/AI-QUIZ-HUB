@@ -12,6 +12,7 @@ const initialState = {
   maxStreak:  0,
   timeTaken:  [],
   answered:   false,
+  selectedAnswer: null,
   timeLeft:   TIMER_SECONDS,
   loading:    false,
   error:      null,
@@ -34,10 +35,10 @@ export function useQuiz() {
 
   const stopTimer = () => clearInterval(timerRef.current)
 
-  const startTimer = useCallback((onTimeout) => {
+  const startTimer = useCallback((onTimeout, initialSeconds = TIMER_SECONDS) => {
     stopTimer()
     startTimeRef.current = Date.now()
-    setQuizSync(q => ({ ...q, timeLeft: TIMER_SECONDS }))
+    setQuizSync(q => ({ ...q, timeLeft: initialSeconds }))
 
     timerRef.current = setInterval(() => {
       setQuizSync(prev => {
@@ -81,6 +82,7 @@ export function useQuiz() {
       return {
         ...prev,
         answered:  true,
+        selectedAnswer: idx,
         correct:   correct ? prev.correct + 1 : prev.correct,
         wrong:     correct ? prev.wrong       : prev.wrong + 1,
         streak,
@@ -96,6 +98,7 @@ export function useQuiz() {
     setQuizSync(prev => ({
       ...prev,
       answered:  true,
+      selectedAnswer: null,
       wrong:     prev.wrong + 1,
       streak:    0,
       timeTaken: [...prev.timeTaken, TIMER_SECONDS],
@@ -103,10 +106,16 @@ export function useQuiz() {
   }, [])
 
   const next = useCallback(() => {
-    setQuizSync(prev => ({ ...prev, currentQ: prev.currentQ + 1, answered: false, timeLeft: TIMER_SECONDS }))
+    setQuizSync(prev => ({ ...prev, currentQ: prev.currentQ + 1, answered: false, selectedAnswer: null, timeLeft: TIMER_SECONDS }))
+  }, [])
+
+  const hydrate = useCallback((savedQuiz) => {
+    if (!savedQuiz || typeof savedQuiz !== 'object') return
+    stopTimer()
+    setQuizSync({ ...initialState, ...savedQuiz })
   }, [])
 
   const reset = () => { stopTimer(); quizRef.current = initialState; setQuiz(initialState) }
 
-  return { quiz, quizRef, load, answer, timeout, next, reset, startTimer, stopTimer }
+  return { quiz, quizRef, load, answer, timeout, next, reset, hydrate, startTimer, stopTimer }
 }
